@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "game-forum-mvp",
   "version": "0.1.0",
   "private": true,
@@ -11,7 +11,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "build:deploy": "prisma generate && prisma migrate deploy && next build",
+    "prisma:deploy": "prisma migrate deploy"
   },
   "engines": {
     "node": ">=20"
