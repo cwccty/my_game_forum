@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 
 export const registerSchema = z.object({
   email: z.string().email("请输入有效邮箱"),
@@ -10,7 +10,7 @@ export const newsPostSchema = z.object({
   title: z.string().min(5, "标题至少 5 个字符"),
   summary: z.string().min(10, "摘要至少 10 个字符"),
   content: z.string().min(30, "正文至少 30 个字符"),
-  coverImage: z.string().url("封面图必须是 URL").optional().or(z.literal("")),
+  coverImage: z.string().url("封面图必须是有效 URL").optional().or(z.literal("")),
   categoryId: z.string().min(1, "请选择分类"),
   tagIds: z.array(z.string()).min(1, "至少选择一个标签")
 });
@@ -19,9 +19,9 @@ export const resourcePostSchema = z.object({
   title: z.string().min(5, "标题至少 5 个字符"),
   summary: z.string().min(10, "摘要至少 10 个字符"),
   description: z.string().min(30, "资源介绍至少 30 个字符"),
-  coverImage: z.string().url("封面图必须是 URL").optional().or(z.literal("")),
-  galleryImages: z.array(z.string().url("截图必须是 URL")).optional(),
-  externalUrl: z.string().url("下载链接必须是 URL"),
+  coverImage: z.string().url("封面图必须是有效 URL").optional().or(z.literal("")),
+  galleryImages: z.array(z.string().url("截图必须是有效 URL")).optional(),
+  externalUrl: z.string().url("下载链接必须是有效 URL"),
   gameName: z.string().min(2, "请填写游戏名称"),
   gameVersion: z.string().min(1, "请填写适配游戏版本"),
   resourceVersion: z.string().optional(),

@@ -2,19 +2,29 @@
 import { hashSync } from "bcryptjs";
 
 const prisma = new PrismaClient();
+const isProduction = process.env.NODE_ENV === "production";
+const allowDemoSeed = process.env.ALLOW_DEMO_SEED === "true";
+const adminEmail = process.env.DEMO_ADMIN_EMAIL ?? "admin@example.com";
+const adminPassword = process.env.DEMO_ADMIN_PASSWORD ?? "Admin123456";
+const playerEmail = process.env.DEMO_USER_EMAIL ?? "player@example.com";
+const playerPassword = process.env.DEMO_USER_PASSWORD ?? "Player123456";
 
 async function main() {
+  if (isProduction && !allowDemoSeed) {
+    throw new Error("生产环境默认禁止写入演示种子数据。如确需执行，请显式设置 ALLOW_DEMO_SEED=true。");
+  }
+
   const admin = await prisma.user.upsert({
-    where: { email: "admin@example.com" },
+    where: { email: adminEmail },
     update: {
       nickname: "站长",
       role: UserRole.ADMIN,
       status: UserStatus.ACTIVE,
-      passwordHash: hashSync("Admin123456", 10)
+      passwordHash: hashSync(adminPassword, 10)
     },
     create: {
-      email: "admin@example.com",
-      passwordHash: hashSync("Admin123456", 10),
+      email: adminEmail,
+      passwordHash: hashSync(adminPassword, 10),
       nickname: "站长",
       role: UserRole.ADMIN,
       status: UserStatus.ACTIVE
@@ -22,16 +32,16 @@ async function main() {
   });
 
   const player = await prisma.user.upsert({
-    where: { email: "player@example.com" },
+    where: { email: playerEmail },
     update: {
       nickname: "模组猎人",
       role: UserRole.USER,
       status: UserStatus.ACTIVE,
-      passwordHash: hashSync("Player123456", 10)
+      passwordHash: hashSync(playerPassword, 10)
     },
     create: {
-      email: "player@example.com",
-      passwordHash: hashSync("Player123456", 10),
+      email: playerEmail,
+      passwordHash: hashSync(playerPassword, 10),
       nickname: "模组猎人",
       role: UserRole.USER,
       status: UserStatus.ACTIVE

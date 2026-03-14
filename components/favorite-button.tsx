@@ -1,4 +1,4 @@
-import { toggleFavoriteAction } from "@/app/actions";
+﻿import { toggleFavoriteAction } from "@/app/actions";
 
 export function FavoriteButton({
   targetId,

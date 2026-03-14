@@ -1,4 +1,4 @@
-import { submitReportAction } from "@/app/actions";
+﻿import { submitReportAction } from "@/app/actions";
 
 export function ReportForm({
   targetId,

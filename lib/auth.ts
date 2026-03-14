@@ -9,6 +9,10 @@ const credentialsSchema = z.object({
   password: z.string().min(6)
 });
 
+const demoEmails = new Set(["admin@example.com", "player@example.com"]);
+const allowProductionDemoAccounts = process.env.ALLOW_PRODUCTION_DEMO_ACCOUNTS === "true";
+const isProduction = process.env.NODE_ENV === "production";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt"
@@ -29,8 +33,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        const email = parsed.data.email.toLowerCase();
+
+        if (isProduction && !allowProductionDemoAccounts && demoEmails.has(email)) {
+          return null;
+        }
+
         const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email }
+          where: { email }
         });
 
         if (!user) {

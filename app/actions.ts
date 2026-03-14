@@ -2,12 +2,23 @@
 
 import { AuditAction, CommentTargetType, ContentStatus, FavoriteTargetType, ReportTargetType } from "@prisma/client";
 import { hashSync } from "bcryptjs";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth, signIn, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { assertRateLimit } from "@/lib/rate-limit";
 import { commentSchema, forumPostSchema, newsPostSchema, registerSchema, reportSchema, resourcePostSchema } from "@/lib/validators";
 import { slugify } from "@/lib/utils";
+
+const rateLimits = {
+  register: { max: 5, windowMs: 10 * 60 * 1000 },
+  login: { max: 10, windowMs: 10 * 60 * 1000 },
+  submit: { max: 6, windowMs: 10 * 60 * 1000 },
+  comment: { max: 10, windowMs: 5 * 60 * 1000 },
+  favorite: { max: 30, windowMs: 5 * 60 * 1000 },
+  report: { max: 5, windowMs: 10 * 60 * 1000 }
+};
 
 function normalizeText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
@@ -18,6 +29,33 @@ function getTagIds(formData: FormData) {
     .getAll("tagIds")
     .map((value) => (typeof value === "string" ? value : ""))
     .filter(Boolean);
+}
+
+function isCommentTargetType(value: string): value is CommentTargetType {
+  return value === "NEWS" || value === "RESOURCE" || value === "FORUM";
+}
+
+function isFavoriteTargetType(value: string): value is FavoriteTargetType {
+  return value === "NEWS" || value === "RESOURCE";
+}
+
+function isReportTargetType(value: string): value is ReportTargetType {
+  return value === "NEWS" || value === "RESOURCE" || value === "FORUM" || value === "COMMENT";
+}
+
+async function getRequestFingerprint() {
+  const requestHeaders = await headers();
+  const forwardedFor = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const realIp = requestHeaders.get("x-real-ip")?.trim();
+  const userAgent = requestHeaders.get("user-agent")?.trim() ?? "unknown-agent";
+  const ip = forwardedFor || realIp || "unknown-ip";
+
+  return `${ip}:${userAgent.slice(0, 80)}`;
+}
+
+async function applyRateLimit(scope: keyof typeof rateLimits, identity: string) {
+  const fingerprint = await getRequestFingerprint();
+  assertRateLimit(scope, `${identity}:${fingerprint}`, rateLimits[scope]);
 }
 
 async function requireUser() {
@@ -40,12 +78,96 @@ async function requireAdmin() {
   return user;
 }
 
+type PublishedInteractionTarget = {
+  targetPath: string;
+  targetType: CommentTargetType | FavoriteTargetType | ReportTargetType;
+  targetId: string;
+};
+
+async function getPublishedContentTarget(targetType: CommentTargetType | FavoriteTargetType | ReportTargetType, targetId: string): Promise<PublishedInteractionTarget> {
+  if (!targetId) {
+    throw new Error("目标内容不存在");
+  }
+
+  if (targetType === "NEWS") {
+    const post = await prisma.newsPost.findFirst({
+      where: { id: targetId, status: ContentStatus.PUBLISHED },
+      select: { id: true, slug: true }
+    });
+
+    if (!post) {
+      throw new Error("资讯不存在或未发布");
+    }
+
+    return { targetId: post.id, targetType, targetPath: `/news/${post.slug}` };
+  }
+
+  if (targetType === "RESOURCE") {
+    const post = await prisma.resourcePost.findFirst({
+      where: { id: targetId, status: ContentStatus.PUBLISHED },
+      select: { id: true, slug: true }
+    });
+
+    if (!post) {
+      throw new Error("资源不存在或未发布");
+    }
+
+    return { targetId: post.id, targetType, targetPath: `/resources/${post.slug}` };
+  }
+
+  if (targetType === "FORUM") {
+    const post = await prisma.forumPost.findFirst({
+      where: { id: targetId, status: ContentStatus.PUBLISHED },
+      select: { id: true, slug: true }
+    });
+
+    if (!post) {
+      throw new Error("帖子不存在或未发布");
+    }
+
+    return { targetId: post.id, targetType, targetPath: `/forum/${post.slug}` };
+  }
+
+  const comment = await prisma.comment.findFirst({
+    where: { id: targetId },
+    include: {
+      newsPost: { select: { slug: true, status: true } },
+      resourcePost: { select: { slug: true, status: true } },
+      forumPost: { select: { slug: true, status: true } }
+    }
+  });
+
+  if (!comment) {
+    throw new Error("评论不存在");
+  }
+
+  if (comment.newsPost && comment.newsPost.status === ContentStatus.PUBLISHED) {
+    return { targetId: comment.id, targetType, targetPath: `/news/${comment.newsPost.slug}` };
+  }
+
+  if (comment.resourcePost && comment.resourcePost.status === ContentStatus.PUBLISHED) {
+    return { targetId: comment.id, targetType, targetPath: `/resources/${comment.resourcePost.slug}` };
+  }
+
+  if (comment.forumPost && comment.forumPost.status === ContentStatus.PUBLISHED) {
+    return { targetId: comment.id, targetType, targetPath: `/forum/${comment.forumPost.slug}` };
+  }
+
+  throw new Error("评论关联的内容不可交互");
+}
+
 export async function registerAction(_: { error?: string } | undefined, formData: FormData) {
   const payload = {
-    email: normalizeText(formData.get("email")),
+    email: normalizeText(formData.get("email")).toLowerCase(),
     nickname: normalizeText(formData.get("nickname")),
     password: normalizeText(formData.get("password"))
   };
+
+  try {
+    await applyRateLimit("register", payload.email || "anonymous-register");
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "操作过于频繁，请稍后再试" };
+  }
 
   const parsed = registerSchema.safeParse(payload);
 
@@ -79,9 +201,14 @@ export async function registerAction(_: { error?: string } | undefined, formData
 }
 
 export async function loginAction(formData: FormData) {
+  const email = normalizeText(formData.get("email")).toLowerCase();
+  const password = normalizeText(formData.get("password"));
+
+  await applyRateLimit("login", email || "anonymous-login");
+
   await signIn("credentials", {
-    email: normalizeText(formData.get("email")),
-    password: normalizeText(formData.get("password")),
+    email,
+    password,
     redirectTo: "/me"
   });
 }
@@ -92,6 +219,8 @@ export async function logoutAction() {
 
 export async function createNewsAction(formData: FormData) {
   const user = await requireUser();
+  await applyRateLimit("submit", `user:${user.id}:news`);
+
   const payload = {
     title: normalizeText(formData.get("title")),
     summary: normalizeText(formData.get("summary")),
@@ -104,7 +233,7 @@ export async function createNewsAction(formData: FormData) {
   const parsed = newsPostSchema.safeParse(payload);
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Failed to create news post.");
+    throw new Error(parsed.error.issues[0]?.message ?? "创建资讯失败");
   }
 
   await prisma.newsPost.create({
@@ -136,6 +265,8 @@ export async function createNewsAction(formData: FormData) {
 
 export async function createResourceAction(formData: FormData) {
   const user = await requireUser();
+  await applyRateLimit("submit", `user:${user.id}:resource`);
+
   const galleryImages = normalizeText(formData.get("galleryImages"))
     .split("\n")
     .map((item) => item.trim())
@@ -158,7 +289,7 @@ export async function createResourceAction(formData: FormData) {
   const parsed = resourcePostSchema.safeParse(payload);
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Failed to create resource post.");
+    throw new Error(parsed.error.issues[0]?.message ?? "创建资源失败");
   }
 
   await prisma.resourcePost.create({
@@ -195,6 +326,8 @@ export async function createResourceAction(formData: FormData) {
 
 export async function createForumAction(formData: FormData) {
   const user = await requireUser();
+  await applyRateLimit("submit", `user:${user.id}:forum`);
+
   const payload = {
     title: normalizeText(formData.get("title")),
     summary: normalizeText(formData.get("summary")),
@@ -206,7 +339,7 @@ export async function createForumAction(formData: FormData) {
   const parsed = forumPostSchema.safeParse(payload);
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Failed to create forum post.");
+    throw new Error(parsed.error.issues[0]?.message ?? "创建帖子失败");
   }
 
   await prisma.forumPost.create({
@@ -237,79 +370,100 @@ export async function createForumAction(formData: FormData) {
 
 export async function addCommentAction(formData: FormData) {
   const user = await requireUser();
+  await applyRateLimit("comment", `user:${user.id}`);
+
   const content = normalizeText(formData.get("content"));
-  const targetType = normalizeText(formData.get("targetType")) as CommentTargetType;
-  const targetId = normalizeText(formData.get("targetId"));
-  const targetPath = normalizeText(formData.get("targetPath"));
+  const rawTargetType = normalizeText(formData.get("targetType"));
+  const rawTargetId = normalizeText(formData.get("targetId"));
   const parsed = commentSchema.safeParse({ content });
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Failed to comment.");
+    throw new Error(parsed.error.issues[0]?.message ?? "评论失败");
   }
 
-  if (targetType === "NEWS") {
-    await prisma.comment.create({ data: { content: parsed.data.content, targetType, newsPostId: targetId, authorId: user.id } });
-    await prisma.newsPost.update({ where: { id: targetId }, data: { commentCount: { increment: 1 } } });
+  if (!isCommentTargetType(rawTargetType)) {
+    throw new Error("评论目标类型无效");
   }
 
-  if (targetType === "RESOURCE") {
-    await prisma.comment.create({ data: { content: parsed.data.content, targetType, resourcePostId: targetId, authorId: user.id } });
-    await prisma.resourcePost.update({ where: { id: targetId }, data: { commentCount: { increment: 1 } } });
+  const target = await getPublishedContentTarget(rawTargetType, rawTargetId);
+
+  if (target.targetType === "NEWS") {
+    await prisma.comment.create({ data: { content: parsed.data.content, targetType: rawTargetType, newsPostId: target.targetId, authorId: user.id } });
+    await prisma.newsPost.update({ where: { id: target.targetId }, data: { commentCount: { increment: 1 } } });
   }
 
-  if (targetType === "FORUM") {
-    await prisma.comment.create({ data: { content: parsed.data.content, targetType, forumPostId: targetId, authorId: user.id } });
-    await prisma.forumPost.update({ where: { id: targetId }, data: { commentCount: { increment: 1 } } });
+  if (target.targetType === "RESOURCE") {
+    await prisma.comment.create({ data: { content: parsed.data.content, targetType: rawTargetType, resourcePostId: target.targetId, authorId: user.id } });
+    await prisma.resourcePost.update({ where: { id: target.targetId }, data: { commentCount: { increment: 1 } } });
   }
 
-  revalidatePath(targetPath);
+  if (target.targetType === "FORUM") {
+    await prisma.comment.create({ data: { content: parsed.data.content, targetType: rawTargetType, forumPostId: target.targetId, authorId: user.id } });
+    await prisma.forumPost.update({ where: { id: target.targetId }, data: { commentCount: { increment: 1 } } });
+  }
+
+  revalidatePath(target.targetPath);
 }
 
 export async function toggleFavoriteAction(formData: FormData) {
   const user = await requireUser();
-  const targetType = normalizeText(formData.get("targetType")) as FavoriteTargetType;
-  const targetId = normalizeText(formData.get("targetId"));
-  const targetPath = normalizeText(formData.get("targetPath"));
+  await applyRateLimit("favorite", `user:${user.id}`);
 
-  if (targetType === "NEWS") {
-    const existing = await prisma.favorite.findFirst({ where: { userId: user.id, targetType, newsPostId: targetId } });
+  const rawTargetType = normalizeText(formData.get("targetType"));
+  const rawTargetId = normalizeText(formData.get("targetId"));
+
+  if (!isFavoriteTargetType(rawTargetType)) {
+    throw new Error("收藏目标类型无效");
+  }
+
+  const target = await getPublishedContentTarget(rawTargetType, rawTargetId);
+
+  if (target.targetType === "NEWS") {
+    const existing = await prisma.favorite.findFirst({ where: { userId: user.id, targetType: rawTargetType, newsPostId: target.targetId } });
 
     if (existing) {
       await prisma.favorite.delete({ where: { id: existing.id } });
-      await prisma.newsPost.update({ where: { id: targetId }, data: { favoriteCount: { decrement: 1 } } });
+      await prisma.newsPost.update({ where: { id: target.targetId }, data: { favoriteCount: { decrement: 1 } } });
     } else {
-      await prisma.favorite.create({ data: { userId: user.id, targetType, newsPostId: targetId } });
-      await prisma.newsPost.update({ where: { id: targetId }, data: { favoriteCount: { increment: 1 } } });
+      await prisma.favorite.create({ data: { userId: user.id, targetType: rawTargetType, newsPostId: target.targetId } });
+      await prisma.newsPost.update({ where: { id: target.targetId }, data: { favoriteCount: { increment: 1 } } });
     }
   }
 
-  if (targetType === "RESOURCE") {
-    const existing = await prisma.favorite.findFirst({ where: { userId: user.id, targetType, resourcePostId: targetId } });
+  if (target.targetType === "RESOURCE") {
+    const existing = await prisma.favorite.findFirst({ where: { userId: user.id, targetType: rawTargetType, resourcePostId: target.targetId } });
 
     if (existing) {
       await prisma.favorite.delete({ where: { id: existing.id } });
-      await prisma.resourcePost.update({ where: { id: targetId }, data: { favoriteCount: { decrement: 1 } } });
+      await prisma.resourcePost.update({ where: { id: target.targetId }, data: { favoriteCount: { decrement: 1 } } });
     } else {
-      await prisma.favorite.create({ data: { userId: user.id, targetType, resourcePostId: targetId } });
-      await prisma.resourcePost.update({ where: { id: targetId }, data: { favoriteCount: { increment: 1 } } });
+      await prisma.favorite.create({ data: { userId: user.id, targetType: rawTargetType, resourcePostId: target.targetId } });
+      await prisma.resourcePost.update({ where: { id: target.targetId }, data: { favoriteCount: { increment: 1 } } });
     }
   }
 
-  revalidatePath(targetPath);
+  revalidatePath(target.targetPath);
   revalidatePath("/me");
 }
 
 export async function submitReportAction(formData: FormData) {
   const user = await requireUser();
+  await applyRateLimit("report", `user:${user.id}`);
+
   const reason = normalizeText(formData.get("reason"));
-  const targetType = normalizeText(formData.get("targetType")) as ReportTargetType;
-  const targetId = normalizeText(formData.get("targetId"));
-  const targetPath = normalizeText(formData.get("targetPath"));
+  const rawTargetType = normalizeText(formData.get("targetType"));
+  const rawTargetId = normalizeText(formData.get("targetId"));
   const parsed = reportSchema.safeParse({ reason });
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Failed to submit report.");
+    throw new Error(parsed.error.issues[0]?.message ?? "举报失败");
   }
+
+  if (!isReportTargetType(rawTargetType)) {
+    throw new Error("举报目标类型无效");
+  }
+
+  const target = await getPublishedContentTarget(rawTargetType, rawTargetId);
 
   const data: {
     reason: string;
@@ -319,16 +473,16 @@ export async function submitReportAction(formData: FormData) {
     resourcePostId?: string;
     forumPostId?: string;
     commentId?: string;
-  } = { reason: parsed.data.reason, targetType, userId: user.id };
+  } = { reason: parsed.data.reason, targetType: rawTargetType, userId: user.id };
 
-  if (targetType === "NEWS") data.newsPostId = targetId;
-  if (targetType === "RESOURCE") data.resourcePostId = targetId;
-  if (targetType === "FORUM") data.forumPostId = targetId;
-  if (targetType === "COMMENT") data.commentId = targetId;
+  if (target.targetType === "NEWS") data.newsPostId = target.targetId;
+  if (target.targetType === "RESOURCE") data.resourcePostId = target.targetId;
+  if (target.targetType === "FORUM") data.forumPostId = target.targetId;
+  if (target.targetType === "COMMENT") data.commentId = target.targetId;
 
   await prisma.report.create({ data });
   revalidatePath("/admin");
-  revalidatePath(targetPath);
+  revalidatePath(target.targetPath);
 }
 
 export async function reviewContentAction(formData: FormData) {
@@ -396,4 +550,3 @@ export async function toggleFeaturedAction(formData: FormData) {
   revalidatePath("/resources");
   revalidatePath("/admin");
 }
-
