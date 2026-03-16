@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #f5efe4;
   --panel: #fffaf2;
   --panel-strong: #fff;
@@ -7,6 +7,7 @@
   --line: #d9cdbb;
   --brand: #b44d22;
   --brand-deep: #7c2f16;
+  --brand-soft: #d46b3f;
   --accent: #1d6b66;
   --danger: #9f2f2f;
   --shadow: 0 20px 60px rgba(79, 54, 26, 0.08);
@@ -53,9 +54,99 @@ button { cursor: pointer; }
 .badge, .tag { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid rgba(180, 77, 34, 0.25); background: rgba(180, 77, 34, 0.08); color: var(--brand-deep); font-size: 0.84rem; padding: 6px 10px; }
 .tag-list { display: flex; gap: 8px; flex-wrap: wrap; }
 .button-row, .inline-form, .admin-actions, .tab-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-button, .button-link { border: none; border-radius: 999px; background: linear-gradient(135deg, var(--brand), var(--brand-deep)); color: white; padding: 12px 18px; font-weight: 700; }
-.secondary-button { background: white; color: var(--brand-deep); border: 1px solid var(--line); }
-.ghost-button, .link-button { background: transparent; color: var(--brand-deep); border: 1px solid transparent; padding: 0; }
+button, .button-link {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border: 1px solid rgba(124, 47, 22, 0.08);
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--brand-soft), var(--brand) 45%, var(--brand-deep));
+  color: white;
+  padding: 12px 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 14px 28px rgba(124, 47, 22, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transform: translateY(0) scale(1);
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease, color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+button::before, .button-link::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 48%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+button::after, .button-link::after {
+  content: "";
+  position: absolute;
+  width: 140%;
+  aspect-ratio: 1;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.08) 28%, transparent 62%);
+  transform: translate(-50%, -50%) scale(0.35);
+  opacity: 0;
+  transition: transform 240ms ease, opacity 240ms ease;
+  pointer-events: none;
+}
+button:hover, .button-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(124, 47, 22, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+button:hover::after, .button-link:hover::after {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(0.8);
+}
+button:active, .button-link:active {
+  transform: translateY(1px) scale(0.975);
+  box-shadow: 0 8px 18px rgba(124, 47, 22, 0.18), inset 0 2px 8px rgba(70, 24, 11, 0.18);
+}
+button:active::after, .button-link:active::after {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+button:focus-visible, .button-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 250, 242, 0.95), 0 0 0 6px rgba(180, 77, 34, 0.32), 0 16px 32px rgba(124, 47, 22, 0.2);
+}
+button:disabled, .button-link[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.secondary-button {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 241, 230, 0.96));
+  color: var(--brand-deep);
+  border: 1px solid rgba(185, 165, 139, 0.9);
+  box-shadow: 0 10px 22px rgba(86, 64, 34, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.secondary-button::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent 55%);
+}
+.ghost-button, .link-button {
+  background: transparent;
+  color: var(--brand-deep);
+  border: 1px solid transparent;
+  padding: 0;
+  min-height: auto;
+  border-radius: 14px;
+  box-shadow: none;
+}
+.ghost-button::before, .ghost-button::after, .link-button::before, .link-button::after { display: none; }
+.ghost-button:hover, .link-button:hover {
+  transform: none;
+  color: var(--brand);
+}
+.ghost-button:active, .link-button:active { transform: translateY(1px); }
 .link-button { font-weight: 600; }
 .panel-grid { display: grid; grid-template-columns: 1.4fr 0.8fr; gap: 24px; }
 .detail-cover { width: 100%; aspect-ratio: 16 / 7; object-fit: cover; border-radius: 18px; margin: 14px 0 18px; }
