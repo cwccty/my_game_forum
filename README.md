@@ -7,7 +7,7 @@
 - 首页聚合推荐资源、最新资讯、热门讨论
 - 资讯区、MOD 资源区、论坛区、个人中心、管理员后台
 - 邮箱 + 密码注册登录
-- 登录页和注册页支持 Google reCAPTCHA 人机验证
+- 登录页和注册页支持 Google reCAPTCHA v3 人机验证
 - 投稿后进入审核流
 - 管理员审核、驳回、下架、推荐资源
 - 评论、收藏、举报
@@ -22,7 +22,7 @@
 - `Prisma`
 - `NextAuth` Credentials
 - `PostgreSQL`
-- `Google reCAPTCHA v2 Checkbox`
+- `Google reCAPTCHA v3`
 
 ## 本地开发
 
@@ -55,14 +55,18 @@ AUTH_TRUST_HOST="true"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 NEXT_PUBLIC_RECAPTCHA_SITE_KEY=""
 RECAPTCHA_SECRET_KEY=""
+RECAPTCHA_MIN_SCORE="0.5"
 ALLOW_PRODUCTION_DEMO_ACCOUNTS="false"
 ALLOW_DEMO_SEED="false"
 ```
 
-如果你要启用 Google 人机验证，需要在 Google reCAPTCHA 后台创建 `reCAPTCHA v2 Checkbox`，然后分别填入：
+如果你要启用 Google 人机验证，需要在 Google reCAPTCHA 后台创建 `reCAPTCHA v3`，然后分别填入：
 
 - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`
 - `RECAPTCHA_SECRET_KEY`
+- `RECAPTCHA_MIN_SCORE`
+
+`RECAPTCHA_MIN_SCORE` 默认推荐 `0.5`。
 
 ### 3. 执行迁移与种子数据
 
@@ -111,6 +115,7 @@ npm.cmd run dev
 
 - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`
 - `RECAPTCHA_SECRET_KEY`
+- `RECAPTCHA_MIN_SCORE`
 
 ## 上传 GitHub 前注意事项
 

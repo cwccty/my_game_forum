@@ -178,7 +178,7 @@ export async function registerAction(_: { error?: string } | undefined, formData
     return { error: parsed.error.issues[0]?.message ?? "注册信息无效" };
   }
 
-  const recaptchaResult = await verifyRecaptchaToken(payload.recaptchaToken);
+  const recaptchaResult = await verifyRecaptchaToken(payload.recaptchaToken, "register");
 
   if (!recaptchaResult.ok) {
     return { error: recaptchaResult.message };
@@ -228,7 +228,7 @@ export async function loginAction(_: { error?: string } | undefined, formData: F
     return { error: error instanceof Error ? error.message : "操作过于频繁，请稍后再试" };
   }
 
-  const recaptchaResult = await verifyRecaptchaToken(recaptchaToken);
+  const recaptchaResult = await verifyRecaptchaToken(recaptchaToken, "login");
 
   if (!recaptchaResult.ok) {
     return { error: recaptchaResult.message };
@@ -588,5 +588,6 @@ export async function toggleFeaturedAction(formData: FormData) {
   revalidatePath("/resources");
   revalidatePath("/admin");
 }
+
 
 

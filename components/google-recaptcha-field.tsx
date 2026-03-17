@@ -1,27 +1,18 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
     grecaptcha?: {
       ready: (callback: () => void) => void;
-      render: (
-        container: HTMLElement,
-        options: {
-          sitekey: string;
-          callback: (token: string) => void;
-          "expired-callback"?: () => void;
-          "error-callback"?: () => void;
-        }
-      ) => number;
-      reset: (widgetId?: number) => void;
+      execute: (siteKey: string, options: { action: string }) => Promise<string>;
     };
     __googleRecaptchaScriptPromise?: Promise<void>;
   }
 }
 
-function loadRecaptchaScript() {
+function loadRecaptchaScript(siteKey: string) {
   if (typeof window === "undefined") {
     return Promise.resolve();
   }
@@ -44,7 +35,7 @@ function loadRecaptchaScript() {
     }
 
     const script = document.createElement("script");
-    script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
+    script.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
     script.async = true;
     script.defer = true;
     script.dataset.googleRecaptcha = "true";
@@ -56,83 +47,88 @@ function loadRecaptchaScript() {
   return window.__googleRecaptchaScriptPromise;
 }
 
-type GoogleRecaptchaFieldProps = {
-  inputName?: string;
-  resetSignal?: number;
-};
+async function executeRecaptcha(siteKey: string, action: string) {
+  await loadRecaptchaScript(siteKey);
 
-export function GoogleRecaptchaField({ inputName = "recaptchaToken", resetSignal = 0 }: GoogleRecaptchaFieldProps) {
-  const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<number | null>(null);
-  const [token, setToken] = useState("");
-  const [loadError, setLoadError] = useState("");
-
-  useEffect(() => {
-    if (!siteKey || !containerRef.current || widgetIdRef.current !== null) {
+  return new Promise<string>((resolve, reject) => {
+    if (!window.grecaptcha) {
+      reject(new Error("grecaptcha unavailable"));
       return;
     }
 
-    let cancelled = false;
+    window.grecaptcha.ready(() => {
+      window.grecaptcha
+        ?.execute(siteKey, { action })
+        .then(resolve)
+        .catch(reject);
+    });
+  });
+}
 
-    loadRecaptchaScript()
-      .then(() => {
-        if (cancelled || !window.grecaptcha || !containerRef.current || widgetIdRef.current !== null) {
-          return;
-        }
+type UseRecaptchaV3Options = {
+  action: string;
+  resetSignal?: number;
+  inputName?: string;
+};
 
-        window.grecaptcha.ready(() => {
-          if (!containerRef.current || widgetIdRef.current !== null) {
-            return;
-          }
+export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptchaToken" }: UseRecaptchaV3Options) {
+  const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+  const tokenInputRef = useRef<HTMLInputElement | null>(null);
+  const allowNativeSubmitRef = useRef(false);
+  const [loadError, setLoadError] = useState("");
 
-          widgetIdRef.current = window.grecaptcha?.render(containerRef.current, {
-            sitekey: siteKey,
-            callback: (nextToken: string) => {
-              setToken(nextToken);
-              setLoadError("");
-            },
-            "expired-callback": () => setToken(""),
-            "error-callback": () => {
-              setToken("");
-              setLoadError("人机验证加载失败，请刷新后重试。");
-            }
-          }) ?? null;
-        });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoadError("人机验证脚本加载失败，请检查网络后刷新页面。");
-        }
-      });
+  useEffect(() => {
+    if (!siteKey) {
+      return;
+    }
 
-    return () => {
-      cancelled = true;
-    };
+    loadRecaptchaScript(siteKey).catch(() => {
+      setLoadError("人机验证脚本加载失败，请刷新页面后重试。");
+    });
   }, [siteKey]);
 
   useEffect(() => {
-    if (widgetIdRef.current !== null && window.grecaptcha) {
-      window.grecaptcha.reset(widgetIdRef.current);
-      setToken("");
+    if (tokenInputRef.current) {
+      tokenInputRef.current.value = "";
     }
+
+    setLoadError("");
   }, [resetSignal]);
 
-  if (!siteKey) {
-    return (
-      <div className="recaptcha-stack">
-        <p className="muted">当前环境尚未配置 Google 人机验证，部署前请补充站点密钥。</p>
-        <input name={inputName} type="hidden" value="" readOnly />
-      </div>
-    );
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!siteKey) {
+      return;
+    }
+
+    if (allowNativeSubmitRef.current) {
+      allowNativeSubmitRef.current = false;
+      return;
+    }
+
+    event.preventDefault();
+    setLoadError("");
+
+    try {
+      const token = await executeRecaptcha(siteKey, action);
+
+      if (!tokenInputRef.current) {
+        throw new Error("recaptcha token input missing");
+      }
+
+      tokenInputRef.current.value = token;
+      allowNativeSubmitRef.current = true;
+      event.currentTarget.requestSubmit();
+    } catch {
+      setLoadError("人机验证失败，请稍后再试。");
+    }
   }
 
-  return (
-    <div className="recaptcha-stack">
-      <div ref={containerRef} className="recaptcha-box" />
-      <input name={inputName} type="hidden" value={token} readOnly />
-      {loadError ? <p className="error-text">{loadError}</p> : null}
-      {!token && !loadError ? <p className="muted">请完成上方的人机验证后再提交。</p> : null}
-    </div>
-  );
+  const field = <input ref={tokenInputRef} name={inputName} type="hidden" defaultValue="" />;
+
+  return {
+    handleSubmit,
+    field,
+    loadError,
+    isConfigured: Boolean(siteKey)
+  };
 }
