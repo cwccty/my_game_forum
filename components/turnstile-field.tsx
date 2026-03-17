@@ -20,13 +20,18 @@ type TurnstileRenderOptions = {
   appearance?: "always" | "execute" | "interaction-only";
   execution?: "render" | "execute";
   callback?: (token: string) => void;
-  "error-callback"?: () => void;
+  "error-callback"?: (errorCode?: string) => void;
   "expired-callback"?: () => void;
   "timeout-callback"?: () => void;
   "response-field"?: boolean;
 };
 
 const TURNSTILE_TIMEOUT_MS = 8000;
+
+type TurnstileUiError = {
+  message: string;
+  debugInfo: string;
+};
 
 function loadTurnstileScript() {
   if (typeof window === "undefined") {
@@ -46,7 +51,7 @@ function loadTurnstileScript() {
 
     if (existing) {
       existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("turnstile script failed to load")), { once: true });
+      existing.addEventListener("error", () => reject(new Error("turnstile-script-load-failed")), { once: true });
       return;
     }
 
@@ -56,7 +61,7 @@ function loadTurnstileScript() {
     script.defer = true;
     script.dataset.turnstileScript = "true";
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("turnstile script failed to load"));
+    script.onerror = () => reject(new Error("turnstile-script-load-failed"));
     document.head.appendChild(script);
   });
 
@@ -79,6 +84,57 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
   });
 }
 
+function mapTurnstileError(error: unknown): TurnstileUiError {
+  const raw = error instanceof Error ? error.message : "turnstile-unknown-error";
+
+  if (raw === "turnstile-script-load-failed" || raw === "turnstile-script-load-timeout") {
+    return {
+      message: "人机验证脚本加载失败，请检查当前网络后刷新页面。",
+      debugInfo: raw
+    };
+  }
+
+  if (raw === "turnstile-widget-unavailable") {
+    return {
+      message: "人机验证组件初始化失败，请刷新页面后重试。",
+      debugInfo: raw
+    };
+  }
+
+  if (raw === "turnstile-execute-timeout") {
+    return {
+      message: "人机验证执行超时，请稍后再试。",
+      debugInfo: raw
+    };
+  }
+
+  if (raw === "turnstile-token-expired") {
+    return {
+      message: "人机验证令牌已过期，请重新提交。",
+      debugInfo: raw
+    };
+  }
+
+  if (raw === "turnstile-widget-removed") {
+    return {
+      message: "人机验证组件状态已重置，请重新提交。",
+      debugInfo: raw
+    };
+  }
+
+  if (raw.startsWith("turnstile-error-code:")) {
+    return {
+      message: "人机验证服务返回错误，请检查站点密钥和域名配置。",
+      debugInfo: raw
+    };
+  }
+
+  return {
+    message: "人机验证失败，请稍后再试。",
+    debugInfo: raw
+  };
+}
+
 type UseTurnstileOptions = {
   action: string;
   resetSignal?: number;
@@ -94,6 +150,7 @@ type UseTurnstileResult = {
   handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   field: ReactElement;
   loadError: string;
+  debugInfo: string;
   isConfigured: boolean;
   isVerifying: boolean;
 };
@@ -106,7 +163,15 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
   const allowNativeSubmitRef = useRef(false);
   const pendingRequestRef = useRef<PendingTokenRequest | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [debugInfo, setDebugInfo] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+
+  function applyUiError(error: unknown) {
+    const mapped = mapTurnstileError(error);
+    console.warn("[turnstile]", mapped.debugInfo, error);
+    setLoadError(mapped.message);
+    setDebugInfo(mapped.debugInfo);
+  }
 
   useEffect(() => {
     let disposed = false;
@@ -133,22 +198,22 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
             pendingRequestRef.current?.resolve(token);
             pendingRequestRef.current = null;
           },
-          "error-callback": () => {
-            pendingRequestRef.current?.reject(new Error("turnstile execution failed"));
+          "error-callback": (errorCode) => {
+            pendingRequestRef.current?.reject(new Error(`turnstile-error-code:${errorCode ?? "unknown"}`));
             pendingRequestRef.current = null;
           },
           "expired-callback": () => {
-            pendingRequestRef.current?.reject(new Error("turnstile token expired"));
+            pendingRequestRef.current?.reject(new Error("turnstile-token-expired"));
             pendingRequestRef.current = null;
           },
           "timeout-callback": () => {
-            pendingRequestRef.current?.reject(new Error("turnstile challenge timeout"));
+            pendingRequestRef.current?.reject(new Error("turnstile-execute-timeout"));
             pendingRequestRef.current = null;
           }
         });
-      } catch {
+      } catch (error) {
         if (!disposed) {
-          setLoadError("人机验证脚本加载失败，请检查网络后刷新页面。");
+          applyUiError(error);
         }
       }
     }
@@ -159,7 +224,7 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
       disposed = true;
 
       if (pendingRequestRef.current) {
-        pendingRequestRef.current.reject(new Error("turnstile widget removed"));
+        pendingRequestRef.current.reject(new Error("turnstile-widget-removed"));
         pendingRequestRef.current = null;
       }
 
@@ -180,14 +245,15 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
     }
 
     setLoadError("");
+    setDebugInfo("");
     setIsVerifying(false);
   }, [resetSignal]);
 
   async function requestTurnstileToken() {
-    await withTimeout(loadTurnstileScript(), TURNSTILE_TIMEOUT_MS, "turnstile script load timeout");
+    await withTimeout(loadTurnstileScript(), TURNSTILE_TIMEOUT_MS, "turnstile-script-load-timeout");
 
     if (!widgetIdRef.current || !window.turnstile) {
-      throw new Error("turnstile widget unavailable");
+      throw new Error("turnstile-widget-unavailable");
     }
 
     return withTimeout(
@@ -197,7 +263,7 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
         window.turnstile?.execute(widgetIdRef.current!);
       }),
       TURNSTILE_TIMEOUT_MS,
-      "turnstile execute timeout"
+      "turnstile-execute-timeout"
     );
   }
 
@@ -213,22 +279,23 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
 
     event.preventDefault();
     setLoadError("");
+    setDebugInfo("");
     setIsVerifying(true);
 
     try {
       const token = await requestTurnstileToken();
 
       if (!tokenInputRef.current) {
-        throw new Error("turnstile token input missing");
+        throw new Error("turnstile-token-input-missing");
       }
 
       tokenInputRef.current.value = token;
       allowNativeSubmitRef.current = true;
       setIsVerifying(false);
       event.currentTarget.requestSubmit();
-    } catch {
+    } catch (error) {
       setIsVerifying(false);
-      setLoadError("人机验证失败或超时，请稍后再试。若当前网络异常，请稍后重试。");
+      applyUiError(error);
     }
   }
 
@@ -243,6 +310,7 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
     handleSubmit,
     field,
     loadError,
+    debugInfo,
     isConfigured: Boolean(siteKey),
     isVerifying
   };

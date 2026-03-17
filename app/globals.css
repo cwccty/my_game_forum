@@ -308,3 +308,5 @@ textarea { resize: vertical; }
   pointer-events: none;
 }
 
+
+.captcha-debug { margin: -6px 0 0; font-size: 0.92rem; word-break: break-all; }

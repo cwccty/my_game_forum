@@ -4,6 +4,15 @@ import { useActionState, useEffect, useState } from "react";
 import { loginAction, registerAction } from "@/app/actions";
 import { useTurnstile } from "@/components/turnstile-field";
 
+function TurnstileFeedback({ error, debugInfo }: { error: string; debugInfo: string }) {
+  return (
+    <>
+      <p className="error-text">{error}</p>
+      {debugInfo ? <p className="muted captcha-debug">调试信息：{debugInfo}</p> : null}
+    </>
+  );
+}
+
 export function RegisterForm() {
   const [state, action, pending] = useActionState(registerAction, undefined);
   const [resetSignal, setResetSignal] = useState(0);
@@ -34,7 +43,7 @@ export function RegisterForm() {
       </label>
       {turnstile.field}
       {state?.error ? <p className="error-text">{state.error}</p> : null}
-      {!state?.error && turnstile.loadError ? <p className="error-text">{turnstile.loadError}</p> : null}
+      {!state?.error && turnstile.loadError ? <TurnstileFeedback error={turnstile.loadError} debugInfo={turnstile.debugInfo} /> : null}
       {!turnstile.isConfigured ? <p className="muted">当前环境尚未配置 Cloudflare Turnstile，部署前请补充站点密钥。</p> : null}
       <button type="submit" disabled={pending || turnstile.isVerifying}>
         {submitLabel}
@@ -69,7 +78,7 @@ export function LoginForm() {
       </label>
       {turnstile.field}
       {state?.error ? <p className="error-text">{state.error}</p> : null}
-      {!state?.error && turnstile.loadError ? <p className="error-text">{turnstile.loadError}</p> : null}
+      {!state?.error && turnstile.loadError ? <TurnstileFeedback error={turnstile.loadError} debugInfo={turnstile.debugInfo} /> : null}
       {!turnstile.isConfigured ? <p className="muted">当前环境尚未配置 Cloudflare Turnstile，部署前请补充站点密钥。</p> : null}
       <button type="submit" disabled={pending || turnstile.isVerifying}>
         {submitLabel}
