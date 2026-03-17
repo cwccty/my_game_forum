@@ -8,6 +8,7 @@ export function RegisterForm() {
   const [state, action, pending] = useActionState(registerAction, undefined);
   const [resetSignal, setResetSignal] = useState(0);
   const recaptcha = useRecaptchaV3({ action: "register", resetSignal });
+  const submitLabel = pending ? "注册中..." : recaptcha.isVerifying ? "验证中..." : "创建账号";
 
   useEffect(() => {
     if (!pending) {
@@ -35,8 +36,8 @@ export function RegisterForm() {
       {state?.error ? <p className="error-text">{state.error}</p> : null}
       {!state?.error && recaptcha.loadError ? <p className="error-text">{recaptcha.loadError}</p> : null}
       {!recaptcha.isConfigured ? <p className="muted">当前环境尚未配置 Google 人机验证，部署前请补充站点密钥。</p> : null}
-      <button type="submit" disabled={pending}>
-        {pending ? "注册中..." : "创建账号"}
+      <button type="submit" disabled={pending || recaptcha.isVerifying}>
+        {submitLabel}
       </button>
     </form>
   );
@@ -46,6 +47,7 @@ export function LoginForm() {
   const [state, action, pending] = useActionState(loginAction, undefined);
   const [resetSignal, setResetSignal] = useState(0);
   const recaptcha = useRecaptchaV3({ action: "login", resetSignal });
+  const submitLabel = pending ? "登录中..." : recaptcha.isVerifying ? "验证中..." : "登录";
 
   useEffect(() => {
     if (!pending) {
@@ -69,8 +71,8 @@ export function LoginForm() {
       {state?.error ? <p className="error-text">{state.error}</p> : null}
       {!state?.error && recaptcha.loadError ? <p className="error-text">{recaptcha.loadError}</p> : null}
       {!recaptcha.isConfigured ? <p className="muted">当前环境尚未配置 Google 人机验证，部署前请补充站点密钥。</p> : null}
-      <button type="submit" disabled={pending}>
-        {pending ? "登录中..." : "登录"}
+      <button type="submit" disabled={pending || recaptcha.isVerifying}>
+        {submitLabel}
       </button>
     </form>
   );

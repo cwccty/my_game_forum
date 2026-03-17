@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, ReactElement, useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -10,6 +10,24 @@ declare global {
     };
     __googleRecaptchaScriptPromise?: Promise<void>;
   }
+}
+
+const RECAPTCHA_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+
+    promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 function loadRecaptchaScript(siteKey: string) {
@@ -48,21 +66,25 @@ function loadRecaptchaScript(siteKey: string) {
 }
 
 async function executeRecaptcha(siteKey: string, action: string) {
-  await loadRecaptchaScript(siteKey);
+  await withTimeout(loadRecaptchaScript(siteKey), RECAPTCHA_TIMEOUT_MS, "reCAPTCHA script load timeout");
 
-  return new Promise<string>((resolve, reject) => {
-    if (!window.grecaptcha) {
-      reject(new Error("grecaptcha unavailable"));
-      return;
-    }
+  return withTimeout(
+    new Promise<string>((resolve, reject) => {
+      if (!window.grecaptcha) {
+        reject(new Error("grecaptcha unavailable"));
+        return;
+      }
 
-    window.grecaptcha.ready(() => {
-      window.grecaptcha
-        ?.execute(siteKey, { action })
-        .then(resolve)
-        .catch(reject);
-    });
-  });
+      window.grecaptcha.ready(() => {
+        window.grecaptcha
+          ?.execute(siteKey, { action })
+          .then(resolve)
+          .catch(reject);
+      });
+    }),
+    RECAPTCHA_TIMEOUT_MS,
+    "reCAPTCHA execute timeout"
+  );
 }
 
 type UseRecaptchaV3Options = {
@@ -71,11 +93,20 @@ type UseRecaptchaV3Options = {
   inputName?: string;
 };
 
-export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptchaToken" }: UseRecaptchaV3Options) {
+type UseRecaptchaV3Result = {
+  handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  field: ReactElement;
+  loadError: string;
+  isConfigured: boolean;
+  isVerifying: boolean;
+};
+
+export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptchaToken" }: UseRecaptchaV3Options): UseRecaptchaV3Result {
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
   const allowNativeSubmitRef = useRef(false);
   const [loadError, setLoadError] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if (!siteKey) {
@@ -83,7 +114,7 @@ export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptcha
     }
 
     loadRecaptchaScript(siteKey).catch(() => {
-      setLoadError("人机验证脚本加载失败，请刷新页面后重试。");
+      setLoadError("人机验证脚本加载失败，请检查网络后刷新页面。Google 服务在当前网络下可能不可用。");
     });
   }, [siteKey]);
 
@@ -93,6 +124,7 @@ export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptcha
     }
 
     setLoadError("");
+    setIsVerifying(false);
   }, [resetSignal]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -107,6 +139,7 @@ export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptcha
 
     event.preventDefault();
     setLoadError("");
+    setIsVerifying(true);
 
     try {
       const token = await executeRecaptcha(siteKey, action);
@@ -117,9 +150,11 @@ export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptcha
 
       tokenInputRef.current.value = token;
       allowNativeSubmitRef.current = true;
+      setIsVerifying(false);
       event.currentTarget.requestSubmit();
     } catch {
-      setLoadError("人机验证失败，请稍后再试。");
+      setIsVerifying(false);
+      setLoadError("人机验证失败或超时，请稍后再试。若你当前网络无法访问 Google，可考虑切换网络或改用 Cloudflare Turnstile。");
     }
   }
 
@@ -129,6 +164,8 @@ export function useRecaptchaV3({ action, resetSignal = 0, inputName = "recaptcha
     handleSubmit,
     field,
     loadError,
-    isConfigured: Boolean(siteKey)
+    isConfigured: Boolean(siteKey),
+    isVerifying
   };
 }
+
