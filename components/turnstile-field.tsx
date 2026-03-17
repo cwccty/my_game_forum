@@ -278,6 +278,7 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
     }
 
     event.preventDefault();
+    const form = event.currentTarget;
     setLoadError("");
     setDebugInfo("");
     setIsVerifying(true);
@@ -292,7 +293,7 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
       tokenInputRef.current.value = token;
       allowNativeSubmitRef.current = true;
       setIsVerifying(false);
-      event.currentTarget.requestSubmit();
+      form.requestSubmit();
     } catch (error) {
       setIsVerifying(false);
       applyUiError(error);
@@ -315,3 +316,5 @@ export function useTurnstile({ action, resetSignal = 0, inputName = "turnstileTo
     isVerifying
   };
 }
+
+
