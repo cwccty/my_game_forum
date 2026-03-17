@@ -162,8 +162,7 @@ export async function registerAction(_: { error?: string } | undefined, formData
   const payload = {
     email: normalizeText(formData.get("email")).toLowerCase(),
     nickname: normalizeText(formData.get("nickname")),
-    password: normalizeText(formData.get("password")),
-    turnstileToken: normalizeText(formData.get("turnstileToken"))
+    password: normalizeText(formData.get("password"))
   };
 
   try {
@@ -178,11 +177,6 @@ export async function registerAction(_: { error?: string } | undefined, formData
     return { error: parsed.error.issues[0]?.message ?? "注册信息无效" };
   }
 
-  const turnstileResult = await verifyTurnstileToken(payload.turnstileToken, "register");
-
-  if (!turnstileResult.ok) {
-    return { error: turnstileResult.message };
-  }
 
   const existing = await prisma.user.findUnique({
     where: { email: parsed.data.email }
@@ -588,6 +582,7 @@ export async function toggleFeaturedAction(formData: FormData) {
   revalidatePath("/resources");
   revalidatePath("/admin");
 }
+
 
 
 
