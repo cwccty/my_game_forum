@@ -5,8 +5,10 @@ import { hashSync } from "bcryptjs";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 import { auth, signIn, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { verifyRecaptchaToken } from "@/lib/recaptcha";
 import { assertRateLimit } from "@/lib/rate-limit";
 import { commentSchema, forumPostSchema, newsPostSchema, registerSchema, reportSchema, resourcePostSchema } from "@/lib/validators";
 import { slugify } from "@/lib/utils";
@@ -160,7 +162,8 @@ export async function registerAction(_: { error?: string } | undefined, formData
   const payload = {
     email: normalizeText(formData.get("email")).toLowerCase(),
     nickname: normalizeText(formData.get("nickname")),
-    password: normalizeText(formData.get("password"))
+    password: normalizeText(formData.get("password")),
+    recaptchaToken: normalizeText(formData.get("recaptchaToken"))
   };
 
   try {
@@ -173,6 +176,12 @@ export async function registerAction(_: { error?: string } | undefined, formData
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "注册信息无效" };
+  }
+
+  const recaptchaResult = await verifyRecaptchaToken(payload.recaptchaToken);
+
+  if (!recaptchaResult.ok) {
+    return { error: recaptchaResult.message };
   }
 
   const existing = await prisma.user.findUnique({
@@ -191,26 +200,55 @@ export async function registerAction(_: { error?: string } | undefined, formData
     }
   });
 
-  await signIn("credentials", {
-    email: parsed.data.email,
-    password: parsed.data.password,
-    redirectTo: "/me"
-  });
+  try {
+    await signIn("credentials", {
+      email: parsed.data.email,
+      password: parsed.data.password,
+      redirectTo: "/me"
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { error: "注册成功，但自动登录失败，请手动登录。" };
+    }
+
+    throw error;
+  }
 
   return {};
 }
 
-export async function loginAction(formData: FormData) {
+export async function loginAction(_: { error?: string } | undefined, formData: FormData) {
   const email = normalizeText(formData.get("email")).toLowerCase();
   const password = normalizeText(formData.get("password"));
+  const recaptchaToken = normalizeText(formData.get("recaptchaToken"));
 
-  await applyRateLimit("login", email || "anonymous-login");
+  try {
+    await applyRateLimit("login", email || "anonymous-login");
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "操作过于频繁，请稍后再试" };
+  }
 
-  await signIn("credentials", {
-    email,
-    password,
-    redirectTo: "/me"
-  });
+  const recaptchaResult = await verifyRecaptchaToken(recaptchaToken);
+
+  if (!recaptchaResult.ok) {
+    return { error: recaptchaResult.message };
+  }
+
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirectTo: "/me"
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { error: "邮箱或密码不正确。" };
+    }
+
+    throw error;
+  }
+
+  return {};
 }
 
 export async function logoutAction() {
@@ -550,3 +588,5 @@ export async function toggleFeaturedAction(formData: FormData) {
   revalidatePath("/resources");
   revalidatePath("/admin");
 }
+
+
