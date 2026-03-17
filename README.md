@@ -7,7 +7,7 @@
 - 首页聚合推荐资源、最新资讯、热门讨论
 - 资讯区、MOD 资源区、论坛区、个人中心、管理员后台
 - 邮箱 + 密码注册登录
-- 登录页和注册页支持 Google reCAPTCHA v3 人机验证
+- 登录页和注册页支持 Cloudflare Turnstile 人机验证
 - 投稿后进入审核流
 - 管理员审核、驳回、下架、推荐资源
 - 评论、收藏、举报
@@ -22,7 +22,7 @@
 - `Prisma`
 - `NextAuth` Credentials
 - `PostgreSQL`
-- `Google reCAPTCHA v3`
+- `Cloudflare Turnstile`
 
 ## 本地开发
 
@@ -53,20 +53,18 @@ DATABASE_URL="postgresql://postgres:your_password@localhost:5432/game_forum_mvp?
 AUTH_SECRET="replace-with-a-long-random-string"
 AUTH_TRUST_HOST="true"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
-NEXT_PUBLIC_RECAPTCHA_SITE_KEY=""
-RECAPTCHA_SECRET_KEY=""
-RECAPTCHA_MIN_SCORE="0.5"
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=""
+TURNSTILE_SECRET_KEY=""
 ALLOW_PRODUCTION_DEMO_ACCOUNTS="false"
 ALLOW_DEMO_SEED="false"
 ```
 
-如果你要启用 Google 人机验证，需要在 Google reCAPTCHA 后台创建 `reCAPTCHA v3`，然后分别填入：
+如果你要启用 Cloudflare Turnstile，需要在 Cloudflare 后台创建站点，然后分别填入：
 
-- `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`
-- `RECAPTCHA_SECRET_KEY`
-- `RECAPTCHA_MIN_SCORE`
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+- `TURNSTILE_SECRET_KEY`
 
-`RECAPTCHA_MIN_SCORE` 默认推荐 `0.5`。
+登录和注册页会在提交时静默执行 Turnstile，不会额外占据表单空间。
 
 ### 3. 执行迁移与种子数据
 
@@ -111,11 +109,10 @@ npm.cmd run dev
 - 前端：`Vercel`
 - 数据库：`Neon` 或其他托管 PostgreSQL
 
-部署时如果要启用 Google 人机验证，也要在 Vercel 中同步配置：
+部署时如果要启用 Cloudflare Turnstile，也要在 Vercel 中同步配置：
 
-- `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`
-- `RECAPTCHA_SECRET_KEY`
-- `RECAPTCHA_MIN_SCORE`
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+- `TURNSTILE_SECRET_KEY`
 
 ## 上传 GitHub 前注意事项
 

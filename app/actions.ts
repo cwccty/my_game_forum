@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { auth, signIn, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { verifyRecaptchaToken } from "@/lib/recaptcha";
+import { verifyTurnstileToken } from "@/lib/recaptcha";
 import { assertRateLimit } from "@/lib/rate-limit";
 import { commentSchema, forumPostSchema, newsPostSchema, registerSchema, reportSchema, resourcePostSchema } from "@/lib/validators";
 import { slugify } from "@/lib/utils";
@@ -163,7 +163,7 @@ export async function registerAction(_: { error?: string } | undefined, formData
     email: normalizeText(formData.get("email")).toLowerCase(),
     nickname: normalizeText(formData.get("nickname")),
     password: normalizeText(formData.get("password")),
-    recaptchaToken: normalizeText(formData.get("recaptchaToken"))
+    turnstileToken: normalizeText(formData.get("turnstileToken"))
   };
 
   try {
@@ -178,10 +178,10 @@ export async function registerAction(_: { error?: string } | undefined, formData
     return { error: parsed.error.issues[0]?.message ?? "注册信息无效" };
   }
 
-  const recaptchaResult = await verifyRecaptchaToken(payload.recaptchaToken, "register");
+  const turnstileResult = await verifyTurnstileToken(payload.turnstileToken, "register");
 
-  if (!recaptchaResult.ok) {
-    return { error: recaptchaResult.message };
+  if (!turnstileResult.ok) {
+    return { error: turnstileResult.message };
   }
 
   const existing = await prisma.user.findUnique({
@@ -220,7 +220,7 @@ export async function registerAction(_: { error?: string } | undefined, formData
 export async function loginAction(_: { error?: string } | undefined, formData: FormData) {
   const email = normalizeText(formData.get("email")).toLowerCase();
   const password = normalizeText(formData.get("password"));
-  const recaptchaToken = normalizeText(formData.get("recaptchaToken"));
+  const turnstileToken = normalizeText(formData.get("turnstileToken"));
 
   try {
     await applyRateLimit("login", email || "anonymous-login");
@@ -228,10 +228,10 @@ export async function loginAction(_: { error?: string } | undefined, formData: F
     return { error: error instanceof Error ? error.message : "操作过于频繁，请稍后再试" };
   }
 
-  const recaptchaResult = await verifyRecaptchaToken(recaptchaToken, "login");
+  const turnstileResult = await verifyTurnstileToken(turnstileToken, "login");
 
-  if (!recaptchaResult.ok) {
-    return { error: recaptchaResult.message };
+  if (!turnstileResult.ok) {
+    return { error: turnstileResult.message };
   }
 
   try {
@@ -588,6 +588,7 @@ export async function toggleFeaturedAction(formData: FormData) {
   revalidatePath("/resources");
   revalidatePath("/admin");
 }
+
 
 
 

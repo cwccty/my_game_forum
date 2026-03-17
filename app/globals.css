@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #f5efe4;
   --panel: #fffaf2;
   --panel-strong: #fff;
@@ -274,3 +274,37 @@ textarea { resize: vertical; }
   background: rgba(255, 255, 255, 0.76);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
+.list-stack, .content-stack { display: grid; gap: 16px; }
+.empty-state {
+  padding: 26px;
+  border: 1px dashed rgba(185, 165, 139, 0.8);
+  border-radius: 24px;
+  text-align: center;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.42);
+}
+.error-text { color: var(--danger); margin: 0; }
+.site-footer { padding: 28px 0 48px; }
+.footer-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 900px) {
+  .hero, .panel-grid, .grid-3, .grid-2, .footer-grid { grid-template-columns: 1fr; }
+  .nav-row { padding: 12px 0; align-items: flex-start; flex-direction: column; }
+}
+.recaptcha-stack { display: grid; gap: 10px; }
+.recaptcha-box {
+  display: inline-flex;
+  min-height: 78px;
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(185, 165, 139, 0.72);
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+.turnstile-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+

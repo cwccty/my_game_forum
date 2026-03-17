@@ -2,13 +2,13 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { loginAction, registerAction } from "@/app/actions";
-import { useRecaptchaV3 } from "@/components/google-recaptcha-field";
+import { useTurnstile } from "@/components/turnstile-field";
 
 export function RegisterForm() {
   const [state, action, pending] = useActionState(registerAction, undefined);
   const [resetSignal, setResetSignal] = useState(0);
-  const recaptcha = useRecaptchaV3({ action: "register", resetSignal });
-  const submitLabel = pending ? "注册中..." : recaptcha.isVerifying ? "验证中..." : "创建账号";
+  const turnstile = useTurnstile({ action: "register", resetSignal });
+  const submitLabel = pending ? "注册中..." : turnstile.isVerifying ? "验证中..." : "创建账号";
 
   useEffect(() => {
     if (!pending) {
@@ -17,7 +17,7 @@ export function RegisterForm() {
   }, [pending, state?.error]);
 
   return (
-    <form action={action} className="panel form-stack" onSubmit={recaptcha.handleSubmit}>
+    <form action={action} className="panel form-stack" onSubmit={turnstile.handleSubmit}>
       <h1>注册账号</h1>
       <p className="muted">注册后即可投稿资讯、资源帖和论坛讨论。</p>
       <label>
@@ -32,11 +32,11 @@ export function RegisterForm() {
         密码
         <input name="password" type="password" minLength={8} required />
       </label>
-      {recaptcha.field}
+      {turnstile.field}
       {state?.error ? <p className="error-text">{state.error}</p> : null}
-      {!state?.error && recaptcha.loadError ? <p className="error-text">{recaptcha.loadError}</p> : null}
-      {!recaptcha.isConfigured ? <p className="muted">当前环境尚未配置 Google 人机验证，部署前请补充站点密钥。</p> : null}
-      <button type="submit" disabled={pending || recaptcha.isVerifying}>
+      {!state?.error && turnstile.loadError ? <p className="error-text">{turnstile.loadError}</p> : null}
+      {!turnstile.isConfigured ? <p className="muted">当前环境尚未配置 Cloudflare Turnstile，部署前请补充站点密钥。</p> : null}
+      <button type="submit" disabled={pending || turnstile.isVerifying}>
         {submitLabel}
       </button>
     </form>
@@ -46,8 +46,8 @@ export function RegisterForm() {
 export function LoginForm() {
   const [state, action, pending] = useActionState(loginAction, undefined);
   const [resetSignal, setResetSignal] = useState(0);
-  const recaptcha = useRecaptchaV3({ action: "login", resetSignal });
-  const submitLabel = pending ? "登录中..." : recaptcha.isVerifying ? "验证中..." : "登录";
+  const turnstile = useTurnstile({ action: "login", resetSignal });
+  const submitLabel = pending ? "登录中..." : turnstile.isVerifying ? "验证中..." : "登录";
 
   useEffect(() => {
     if (!pending) {
@@ -56,7 +56,7 @@ export function LoginForm() {
   }, [pending, state?.error]);
 
   return (
-    <form action={action} className="panel form-stack" onSubmit={recaptcha.handleSubmit}>
+    <form action={action} className="panel form-stack" onSubmit={turnstile.handleSubmit}>
       <h1>登录</h1>
       <p className="muted">使用邮箱和密码登录，普通用户登录后可以投稿和评论。</p>
       <label>
@@ -67,11 +67,11 @@ export function LoginForm() {
         密码
         <input name="password" type="password" required />
       </label>
-      {recaptcha.field}
+      {turnstile.field}
       {state?.error ? <p className="error-text">{state.error}</p> : null}
-      {!state?.error && recaptcha.loadError ? <p className="error-text">{recaptcha.loadError}</p> : null}
-      {!recaptcha.isConfigured ? <p className="muted">当前环境尚未配置 Google 人机验证，部署前请补充站点密钥。</p> : null}
-      <button type="submit" disabled={pending || recaptcha.isVerifying}>
+      {!state?.error && turnstile.loadError ? <p className="error-text">{turnstile.loadError}</p> : null}
+      {!turnstile.isConfigured ? <p className="muted">当前环境尚未配置 Cloudflare Turnstile，部署前请补充站点密钥。</p> : null}
+      <button type="submit" disabled={pending || turnstile.isVerifying}>
         {submitLabel}
       </button>
     </form>

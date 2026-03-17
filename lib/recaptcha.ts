@@ -1,21 +1,19 @@
-﻿const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
-const RECAPTCHA_SCORE_THRESHOLD = Number(process.env.RECAPTCHA_MIN_SCORE ?? "0.5");
+﻿const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-type RecaptchaValidationResult =
+type TurnstileValidationResult =
   | { ok: true }
   | { ok: false; message: string };
 
-type RecaptchaVerifyPayload = {
+type TurnstileVerifyPayload = {
   success?: boolean;
-  score?: number;
   action?: string;
   hostname?: string;
   [key: string]: unknown;
 };
 
-export async function verifyRecaptchaToken(token: string, expectedAction: string): Promise<RecaptchaValidationResult> {
-  const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-  const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+export async function verifyTurnstileToken(token: string, expectedAction: string): Promise<TurnstileValidationResult> {
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const secretKey = process.env.TURNSTILE_SECRET_KEY;
 
   if (!siteKey && !secretKey) {
     return { ok: true };
@@ -30,7 +28,7 @@ export async function verifyRecaptchaToken(token: string, expectedAction: string
   }
 
   try {
-    const response = await fetch(RECAPTCHA_VERIFY_URL, {
+    const response = await fetch(TURNSTILE_VERIFY_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
@@ -46,18 +44,14 @@ export async function verifyRecaptchaToken(token: string, expectedAction: string
       return { ok: false, message: "人机验证服务暂时不可用，请稍后再试。" };
     }
 
-    const payload = (await response.json()) as RecaptchaVerifyPayload;
+    const payload = (await response.json()) as TurnstileVerifyPayload;
 
     if (!payload.success) {
       return { ok: false, message: "人机验证未通过，请重试。" };
     }
 
-    if (payload.action !== expectedAction) {
+    if (payload.action && payload.action !== expectedAction) {
       return { ok: false, message: "人机验证动作不匹配，请刷新页面后重试。" };
-    }
-
-    if (typeof payload.score === "number" && payload.score < RECAPTCHA_SCORE_THRESHOLD) {
-      return { ok: false, message: "系统判定当前请求风险较高，请稍后再试。" };
     }
 
     return { ok: true };
